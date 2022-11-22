@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SocialPlatforms.Impl;
+using UnityEngine.UI;
 
 public class DungeonGeneration : MonoBehaviour
 {
@@ -38,7 +40,7 @@ public class DungeonGeneration : MonoBehaviour
     }
 
     // Constant values
-    private const int TOTAL_ROOM_DIVISOR = 4;
+    private const float PERCENT_DIVISOR = 100.0f;
 
     private static RoomType[] roomTypes = 
     {   // This will help in randomization of the rooms as we need to be able to access the values
@@ -59,17 +61,23 @@ public class DungeonGeneration : MonoBehaviour
         RoomType.W 
     };
 
-    // Serialized Fields for use in Unity
-    [Header("Dungeon Size")]
-    [Range(10, 100)]
-    [SerializeField] int dungeonRowSize = 10;           // the dungeon length given by user (defaults to 10)
 
-    [Range(10, 100)]
-    [SerializeField] int dungeonColSize = 10;           // the dungeon width given by user (defaults to 10)
+    // Serialized Fields for use in Unity
+    [Header("Dungeon Size Height")]
+    [SerializeField] Slider dungeonHeightSlider;
+    [SerializeField] TextMeshProUGUI dungeonHeightText;
+
+    [Header("Dungeon Size Width")]
+    [SerializeField] Slider dungeonWidthSlider;
+    [SerializeField] TextMeshProUGUI dungeonWidthText;
+
+    [Header("Max Percent Clear Rooms")]
+    [SerializeField] Slider dungeonClearSlider;
+    [SerializeField] TextMeshProUGUI dungeonClearText;
 
     [Header("UI Output")]
-    [SerializeField] TextMeshProUGUI startingLocation;  // a text box to print the array in after each pass (may need to have some wait time)
-    [SerializeField] TextMeshProUGUI generationOutbox;  // a text box to print the array in after each pass (may need to have some wait time)
+    [SerializeField] TextMeshProUGUI startingLocation;  // a text box to print the array the starting room information each generation
+    [SerializeField] TextMeshProUGUI generationOutbox;  // a text box to print the array in after each generation
 
     // Public variables
 
@@ -77,15 +85,37 @@ public class DungeonGeneration : MonoBehaviour
     private RoomType[,] generatedDungeon;               // an array to hold the room types for the dungeon being generated
     private int startRoomRow;                           // the starting room X position for the dungeon
     private int startRoomCol;                           // the starting room Z position for the dungeon
+    private int dungeonRowSize;                         // the dungeon length given by user (limiting from 10 to 100)
+    private int dungeonColSize;                         // the dungeon width given by user (limiting from 10 to 100)
     private int currentRowSize;                         // the current size X of the dungeon for printing
     private int currentColSize;                         // the current size Z of the dungeon for printing
-    private int minNumEmpty;                            // a minimum number of empty rooms based on dungeon size
+    private int emptyRoomPct;                           // the percentage of empty rooms the user wants (limiting to 25% to 75%)
+    private int minNumEmpty;                            // a minimum number of empty rooms based on dungeon size and user input
     private int dungeonNumber = 0;                      // a dungeon number to keep track of files to create (save to playerPrefs?)
 
 
     // Start is called before the first frame update
     void Start()
     {
+
+        // set up the high score from last time the scene was loaded
+        if (PlayerPrefs.HasKey("DungeonNumber"))
+        {
+            dungeonNumber = PlayerPrefs.GetInt("DungeonNumber");
+        }
+
+        // set up initial slider values for the dungeon generation system (height)
+        dungeonRowSize = (int)dungeonHeightSlider.value;
+        dungeonHeightText.text = dungeonRowSize.ToString();
+
+        // (width)
+        dungeonColSize = (int)dungeonWidthSlider.value;
+        dungeonWidthText.text = dungeonColSize.ToString();
+
+        // (max clear room percentage)
+        emptyRoomPct = (int)dungeonClearSlider.value;
+        dungeonClearText.text = emptyRoomPct.ToString();
+
         // Generate the dungeon for this this play through
         GenerateDungeon();
 
@@ -126,7 +156,9 @@ public class DungeonGeneration : MonoBehaviour
         generatedDungeon = new RoomType[currentRowSize, currentColSize];
 
         // calculate the largest number of empty rooms for re-generation
-        minNumEmpty = ((currentRowSize * currentColSize) / TOTAL_ROOM_DIVISOR);
+        float emptyPercent = (emptyRoomPct / PERCENT_DIVISOR);
+        int numRooms = (currentRowSize * currentColSize);
+        minNumEmpty = (int)(numRooms * emptyPercent);
 
         // Clear the dungeon to get it ready to be populated
         ClearDungeon();
@@ -168,9 +200,14 @@ public class DungeonGeneration : MonoBehaviour
         // Print the current array after the room is printed
         int numClrRooms = DebugPrintDungeonArray();
 
-        // TODO: may need to check number of empty rooms and if it is too many - regenerate! This will keep dungeons from being too small
+        // printing some debug information to test percentages
+        Debug.Log("Dungeon generated with " + numClrRooms + " clear rooms when tolerance was: " + minNumEmpty);
+
+        // check number of empty rooms and if it is too many - regenerate!
+        // This will keep dungeons from being too small based on user tolerance
         if (numClrRooms > minNumEmpty)
         {
+            Debug.Log("Regenerating");
             GenerateDungeon();
         }
 
@@ -184,6 +221,7 @@ public class DungeonGeneration : MonoBehaviour
     /// </summary>
     public void SaveDungeon()
     {
+        string currentDir = Directory.GetCurrentDirectory();
         string filePath = @".\GeneratedDungeons\";
         string fileName = filePath + "Dungeon_" + dungeonNumber + ".csv";
         string delimiter = ", ";
@@ -221,10 +259,52 @@ public class DungeonGeneration : MonoBehaviour
         // write to the fileName
         File.WriteAllText(fileName, outputString);
 
-        // increase the dungeon number so we can save more files
+        // increase the dungeon number so we can save more files 
         dungeonNumber++;
 
+        // saving the current value so we don't overwrite files later
+        PlayerPrefs.SetInt("DungeonNumber", dungeonNumber);
+
     } // end SaveDungeon
+
+    /// <summary>
+    /// Updates the width of the dungeon for next generation.
+    /// </summary>
+    public void updateDungeonHeight() 
+    {
+        dungeonRowSize = (int)dungeonHeightSlider.value;
+        dungeonHeightText.text = dungeonRowSize.ToString();
+
+    } // updateDungeonHeight
+
+    /// <summary>
+    /// Updates the width of the dungeon for next generation.
+    /// </summary>
+    public void updateDungeonWidth()
+    {
+        dungeonColSize = (int)dungeonWidthSlider.value;
+        dungeonWidthText.text = dungeonColSize.ToString();
+
+    } // updateDungeonWidth
+
+    /// <summary>
+    /// Updates the clear room percentage of the dungeon for next generation.
+    /// </summary>
+    public void updateDungeonEmptyPercent()
+    {
+        emptyRoomPct = (int)dungeonClearSlider.value;
+        dungeonClearText.text = emptyRoomPct.ToString();
+
+    } // updateDungeonEmptyPercent
+
+    /// <summary>
+    /// to exit the program on a windows build
+    /// </summary>
+    public void QuitGame()
+    {
+        Application.Quit();
+
+    } // end QuitGame
 
     /// <summary>
     /// Generates a room to place in the current spot and goes through exits until it can't generate any more rooms (recursive)
