@@ -83,12 +83,12 @@ public class DungeonGeneration : MonoBehaviour
 
     // Private variables
     private RoomType[,] generatedDungeon;               // an array to hold the room types for the dungeon being generated
-    private int startRoomRow;                           // the starting room X position for the dungeon
-    private int startRoomCol;                           // the starting room Z position for the dungeon
+    private int startRoomRow;                           // the starting room Z position for the dungeon
+    private int startRoomCol;                           // the starting room X position for the dungeon
     private int dungeonRowSize;                         // the dungeon length given by user (limiting from 10 to 100)
     private int dungeonColSize;                         // the dungeon width given by user (limiting from 10 to 100)
-    private int currentRowSize;                         // the current size X of the dungeon for printing
-    private int currentColSize;                         // the current size Z of the dungeon for printing
+    private int currentRoomHeight;                      // the current size Z of the dungeon for printing
+    private int currentRoomWidth;                       // the current size X of the dungeon for printing
     private int emptyRoomPct;                           // the percentage of empty rooms the user wants (limiting to 25% to 75%)
     private int minNumEmpty;                            // a minimum number of empty rooms based on dungeon size and user input
     private int dungeonNumber = 0;                      // a dungeon number to keep track of files to create (save to playerPrefs?)
@@ -133,9 +133,9 @@ public class DungeonGeneration : MonoBehaviour
     public void ClearDungeon()
     {
         // Set up the room dungeon to be empty by populating it with the CLR Room type
-        for (int i = 0; i < currentRowSize; i++)
+        for (int i = 0; i < currentRoomHeight; i++)
         {
-            for (int j = 0; j < currentColSize; j++)
+            for (int j = 0; j < currentRoomWidth; j++)
             {
                 generatedDungeon[i, j] = RoomType.CLR;
             }
@@ -149,15 +149,15 @@ public class DungeonGeneration : MonoBehaviour
     public void GenerateDungeon()
     {
         // save the current size of the dungeon being generated so we don't go out of bounds when printing clearing if it changes
-        currentRowSize = dungeonRowSize;
-        currentColSize = dungeonColSize;
+        currentRoomHeight = dungeonRowSize;
+        currentRoomWidth = dungeonColSize;
 
         // Create the room dungeon array based on the user input, this won't change during game play
-        generatedDungeon = new RoomType[currentRowSize, currentColSize];
+        generatedDungeon = new RoomType[currentRoomHeight, currentRoomWidth];
 
         // calculate the largest number of empty rooms for re-generation
         float emptyPercent = (emptyRoomPct / PERCENT_DIVISOR);
-        int numRooms = (currentRowSize * currentColSize);
+        int numRooms = (currentRoomHeight * currentRoomWidth);
         minNumEmpty = (int)(numRooms * emptyPercent);
 
         // Clear the dungeon to get it ready to be populated
@@ -166,8 +166,8 @@ public class DungeonGeneration : MonoBehaviour
         // Choose a random location for the starting room. 
         //      - to make sure this works, we need to make sure our starting room is not on the edge of the array 
         //      - unless you want pass through
-        startRoomRow = Random.Range(1, (currentRowSize - 1));
-        startRoomCol = Random.Range(1, (currentColSize - 1));
+        startRoomRow = Random.Range(1, (currentRoomHeight - 1));
+        startRoomCol = Random.Range(1, (currentRoomWidth - 1));
 
         // set the starting data to the background so we can trace the output 
         startingLocation.text = "Starting row is " + (startRoomRow + 1) + " and col is " + (startRoomCol + 1);
@@ -241,9 +241,9 @@ public class DungeonGeneration : MonoBehaviour
         // now get the string to ouput (let's add the start row and column at the beginning)
         string outputString = "";
 
-        for (int row = 0; row < currentRowSize; row++)
+        for (int row = 0; row < currentRoomHeight; row++)
         {
-            for (int col = 0; col < currentColSize; col++)
+            for (int col = 0; col < currentRoomWidth; col++)
             {
                 // add each room to the print out so we see it as a double array using the delimiter
                 outputString += generatedDungeon[row, col].ToString() + delimiter;
@@ -329,11 +329,17 @@ public class DungeonGeneration : MonoBehaviour
 
                 // if an exit is going out of bounds, mark the room as clear and try again
                 if ( (currentRoom.ToString().Contains(ExitDirection.N.ToString() ) && (currentRow == 0) ) ||
-                     (currentRoom.ToString().Contains(ExitDirection.E.ToString() ) && (currentCol == (currentColSize - 1) ) ) ||
-                     (currentRoom.ToString().Contains(ExitDirection.S.ToString() ) && (currentRow == (currentRowSize - 1) ) ) || 
+                     (currentRoom.ToString().Contains(ExitDirection.E.ToString() ) && (currentCol == (currentRoomWidth - 1) ) ) ||
+                     (currentRoom.ToString().Contains(ExitDirection.S.ToString() ) && (currentRow == (currentRoomHeight - 1) ) ) || 
                      (currentRoom.ToString().Contains(ExitDirection.W.ToString() ) && (currentCol == 0 ) ) )
                 {
                     currentRoom = RoomType.CLR;
+                }
+
+                // Check surrounding rooms if we don't have a clear room
+                if (currentRoom != RoomType.CLR)
+                {
+                    currentRoom = CheckSurroundingRooms(currentRoom, currentRow, currentCol);
                 }
             }
 
@@ -366,6 +372,137 @@ public class DungeonGeneration : MonoBehaviour
         }
 
     } // end GenerateRoom
+    
+    /// <summary>
+    /// Checks surrounding rooms to verify if an exit is in the direction if needed, returns a clear room if not
+    /// </summary>
+    /// <param name="currentRoom">The current room type to check</param>
+    /// <param name="currentRow">The current row in the generation array</param>
+    /// <param name="currentCol">The current col in the generation array</param>
+    /// <returns></returns>
+    private RoomType CheckSurroundingRooms(RoomType currentRoom, int currentRow, int currentCol)
+    {
+
+        // only look North if we aren't on the top edge
+        if (currentRow > 0)
+        {
+            RoomType roomNorth = generatedDungeon[currentRow - 1, currentCol];
+
+            // only need to check if there is a room there.
+            if (roomNorth != RoomType.CLR)
+            {
+
+                // if the room contains a South exit, then also check that we have a North exit
+                if (roomNorth.ToString().Contains(ExitDirection.S.ToString()))
+                {
+                    // if the room does not contain a North exit, then try again
+                    if (!currentRoom.ToString().Contains(ExitDirection.N.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+                // otherwise it must have a room that doesn't have a South exit
+                else
+                {
+                    // so make sure we don't have one North
+                    if (currentRoom.ToString().Contains(ExitDirection.N.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+            }
+        }
+
+        // only look South if we aren't on the bottom edge
+        if (currentRow < (currentRoomHeight - 1))
+        {
+            RoomType roomSouth = generatedDungeon[currentRow + 1, currentCol];
+
+            // only need to check if there is a room there.
+            if (roomSouth != RoomType.CLR)
+            {
+                // if the room contains a North exit, then also check that we have a South exit 
+                if (roomSouth.ToString().Contains(ExitDirection.N.ToString()))
+                {
+                    // if the room does not contain a South exit, then try again
+                    if (!currentRoom.ToString().Contains(ExitDirection.S.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+                // otherwise it must have a room that doesn't have a North exit
+                else
+                {
+                    // so make sure we don't have one South
+                    if (currentRoom.ToString().Contains(ExitDirection.S.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+            }
+        }
+
+        // only look West if we aren't on the left edge
+        if (currentCol > 0)
+        {
+            RoomType roomWest = generatedDungeon[currentRow, currentCol - 1];
+
+            // only need to check West if there is a room there
+            if (roomWest != RoomType.CLR)
+            {
+                // if the room contains an East exit, then also check to see if we have a West exit
+                if (roomWest.ToString().Contains(ExitDirection.E.ToString()))
+                {
+                    // if the room does not contains a West exit, then try again
+                    if (!currentRoom.ToString().Contains(ExitDirection.W.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+                // otherwise it must have a room that doesn't have an East exit
+                else
+                {
+                    // so make sure we don't have one West
+                    if (currentRoom.ToString().Contains(ExitDirection.W.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+            }
+        }
+
+        // only look East if we aren't on the right edge
+        if (currentCol < (currentRoomWidth - 1))
+        {
+            RoomType roomEast = generatedDungeon[currentRow, currentCol + 1];
+
+            // only need to check East if there is a room there
+            if (roomEast != RoomType.CLR)
+            {
+                // if the room contains a West exit, then also check to see if we have an East exit
+                if (roomEast.ToString().Contains(ExitDirection.W.ToString()))
+                {
+                    // if the room does not contains an East exit, then try again
+                    if (!currentRoom.ToString().Contains(ExitDirection.E.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+                // otherwise it must have a room that doesn't have a West exit
+                else
+                {
+                    // so make sure we don't have one East
+                    if (currentRoom.ToString().Contains(ExitDirection.E.ToString()))
+                    {
+                        currentRoom = RoomType.CLR;
+                    }
+                }
+            }
+        }
+
+        return currentRoom;
+
+    } // end CheckSurroundingRooms
 
     private int DebugPrintDungeonArray()
     {
@@ -373,9 +510,9 @@ public class DungeonGeneration : MonoBehaviour
 
         string outputString = "";
 
-        for (int row = 0; row < currentRowSize; row++)
+        for (int row = 0; row < currentRoomHeight; row++)
         {
-            for (int col = 0; col < currentColSize; col++)
+            for (int col = 0; col < currentRoomWidth; col++)
             {
                 // keep track of empty rooms, as we may need to regenerate the dungeon if there are too many
                 if (generatedDungeon[row, col] == RoomType.CLR)
